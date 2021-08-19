@@ -32,7 +32,7 @@ import lombok.extern.slf4j.Slf4j;
 public class ApplicationEventListener {
 	
 	@Value("${cache.update.interval:1}")
-	private long interval;
+	private long interval; 
 	
 	@Value("${cache.value.null.check.enabled:false}")
 	private boolean valueCheckEnabled;
