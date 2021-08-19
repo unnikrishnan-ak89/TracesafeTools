@@ -34,7 +34,6 @@ public class ApplicationEventListener {
 	@Value("${cache.update.interval:1}")
 	private long interval;
 	
-	
 	@Value("${cache.value.null.check.enabled:false}")
 	private boolean valueCheckEnabled;
 	
