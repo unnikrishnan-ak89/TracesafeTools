@@ -1,0 +1,2 @@
+sequenceNumber,protocolVersion,beaconLoggerTick,extractTime,battery,guidIndex,count,rssi,contactInterval (in Seconds)
+1,1,0,0,99,,0,30,25

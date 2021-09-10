@@ -1,4 +1,4 @@
-package com.tracesafe.subscriber.sanity.checker;
+package com.tracesafe.subscriber.sanity.checker.utils;
 
 import org.springframework.beans.BeansException;
 import org.springframework.context.ApplicationContext;
