@@ -32,7 +32,7 @@ public class TagProximityPacket {
 	private int count;
 	private int rssi;
 	
-	private boolean randomBatteryEnabled;
+	private long lastseen;
 	
 	public TagProximityPacket() {}
 
@@ -50,21 +50,6 @@ public class TagProximityPacket {
 		this.count = count;
 		this.rssi = rssi;
 	}
-
-	public TagProximityPacket(int sequenceNumber, int protocolVersion, long syncTime, long beaconLoggerTick,
-			long extractTime, int reserved, boolean randomBatteryEnabled, int count, int rssi) {
-		
-		super();
-		this.sequenceNumber = sequenceNumber;
-		this.protocolVersion = protocolVersion;
-		this.syncTime = syncTime;
-		this.beaconLoggerTick = beaconLoggerTick;
-		this.extractTime = extractTime;
-		this.reserved = reserved;
-		this.randomBatteryEnabled = randomBatteryEnabled;
-		this.count = count;
-		this.rssi = rssi;
-	}
 	
 	@Override
 	public String toString() {
@@ -78,6 +63,7 @@ public class TagProximityPacket {
 		.append(PIPE).append(" battery : ").append(battery)
 		.append(PIPE).append(" count : ").append(count)
 		.append(PIPE).append(" rssi : ").append(rssi)
+		.append(PIPE).append(" lastseen : ").append(lastseen)
 		.append(("]")).toString();
 	}
 	

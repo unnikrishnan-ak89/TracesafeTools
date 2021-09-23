@@ -8,8 +8,12 @@ import lombok.Setter;
 @Getter
 @Setter
 public class ExecutionData extends SanityInput 	{
+	
+	private int rootOrgId;
 
 	private TestCaseEnum testCaseEnum;
+	
 	private long executionTime;
+	
 	private long initialLastSeen;
 }

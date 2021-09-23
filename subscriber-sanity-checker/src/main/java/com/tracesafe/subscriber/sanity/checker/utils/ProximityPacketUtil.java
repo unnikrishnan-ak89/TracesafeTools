@@ -3,18 +3,21 @@ package com.tracesafe.subscriber.sanity.checker.utils;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Random;
 
 import org.apache.commons.lang3.ArrayUtils;
 
 import com.tracesafe.subscriber.sanity.checker.Constants;
+import com.tracesafe.subscriber.sanity.checker.pojo.ExecutionData;
 import com.tracesafe.subscriber.sanity.checker.pojo.TagProximityPacket;
 
 public class ProximityPacketUtil {
 	
-	private static int[] POSSIBLE_BATTERY_VALUES = { 100, 85, 71, 57, 42, 28, 14, 0 };
-
-	public static Byte[] createPacket(int rootOrgId, int subOrgId, int bridgeId, long beaconlogger, List<Long> tagArray, long interval, TagProximityPacket packetData) {
+	public static Byte[] createPacket(ExecutionData executionData, TagProximityPacket packetData) {
+		List<Long> tagArray = Arrays.asList(executionData.getBeaconLoggerId1());
+		return createPacket(executionData.getRootOrgId(), executionData.getBridgeSiteId1(), executionData.getBridgeSerialNo1(), executionData.getBeaconLoggerId1(), tagArray, 15L, packetData);
+	}
+	
+	private static Byte[] createPacket(int rootOrgId, int subOrgId, int bridgeId, long beaconlogger, List<Long> tagArray, long interval, TagProximityPacket packetData) {
 
 		int header = Constants.TAG_PACKET_HEADER;
 		int count = tagArray.size();
@@ -93,10 +96,10 @@ public class ProximityPacketUtil {
 		int beacontype = Constants.B2;
 		int reserved = packetData.getReserved();
 		int count = packetData.getCount();
-		long lastseen = (System.currentTimeMillis() / 1000) - 1;
+		long lastseen = packetData.getLastseen();
 		long firstseen = lastseen - interval;
 		int rssi = packetData.getRssi();
-		int batteryValue = packetData.isRandomBatteryEnabled() ? getRandomBattery() : packetData.getBattery();
+		int batteryValue = packetData.getBattery();
 
 		Byte[] arr = new Byte[20];
 
@@ -122,11 +125,6 @@ public class ProximityPacketUtil {
 		arr[19] = (byte) ((rssi) & 0xff);
 
 		return Arrays.asList(arr);
-	}
-	
-	public static int getRandomBattery() {
-		Random rand = new Random();
-		return POSSIBLE_BATTERY_VALUES[rand.nextInt(POSSIBLE_BATTERY_VALUES.length)];
 	}
 
 }
