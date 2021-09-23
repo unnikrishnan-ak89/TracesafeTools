@@ -29,6 +29,10 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class SanityCheckerService {
 	
+	private static long UPDATE_LAST_SEEN_DIFF = 100; 
+	
+	private static long ONEDAY_LAST_SEEN_DIFF = 86400; // 60 x 60 x 24 = 86,400 
+	
 	@Autowired
 	private ConfigurationService configurationService;
 
@@ -55,11 +59,7 @@ public class SanityCheckerService {
 		for (TestCaseEnum testCaseEnum : TestCaseEnum.values()) {
 			executionData.setTestCaseEnum(testCaseEnum);
 			executeTest();
-			
 			evaluateTest();
-			if(true) {
-				break;
-			}
 		}
 	}
 	
@@ -71,8 +71,21 @@ public class SanityCheckerService {
 			executionData.setExecutionTime(System.currentTimeMillis()/1000);
 			publichProximityPacket();
 			break;
+		case PROXIMITY_USER_CHECKIN_UPDATE:
+		case PROXIMITY_USER_CHECKIN_NOCHANGE_GREATER:
+		case PROXIMITY_USER_CHECKIN_NOCHANGE_PREVIOUSDAY:	
+			executionData.setExecutionTime(System.currentTimeMillis()/1000);
+			publichProximityPacket();
+			break;
 		default :
 			break;
+		}
+		
+		try {
+			Thread.sleep(5000);
+		} catch (InterruptedException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
 		}
 	}
 	
@@ -99,7 +112,10 @@ public class SanityCheckerService {
 	private void evaluateTest() {
 		switch(executionData.getTestCaseEnum()) {
 		case PROXIMITY_USER_CHECKIN_SET:
-			evaluateTestcaseStatus = checkProximityUserCheckinSet();
+		case PROXIMITY_USER_CHECKIN_UPDATE:
+		case PROXIMITY_USER_CHECKIN_NOCHANGE_GREATER:
+		case PROXIMITY_USER_CHECKIN_NOCHANGE_PREVIOUSDAY:	
+			evaluateTestcaseStatus = checkProximityPacketCachedLastSeen();
 			break;
 		default :
 			break;
@@ -115,7 +131,7 @@ public class SanityCheckerService {
 		return String.format(RedisUtils.TAG_CHECKIN_TIME_KEY_FORMAT, executionData.getRootOrgId(), executionData.getTagUser1(), currentDate);
 	}
 	
-	private boolean checkProximityUserCheckinSet() {
+	private boolean checkProximityPacketCachedLastSeen() {
 		String key = getProximityUserCheckinKey();
 		String cacheValue = tagCheckinTimeTemplate.opsForValue().get(key);
 		if(StringUtils.isBlank(cacheValue)) {
@@ -129,7 +145,11 @@ public class SanityCheckerService {
 			long cachedLastSeen = 0;
 			try {
 				cachedLastSeen = Long.parseLong(cachedCheckinValue);
-				return (proximityPacket.getLastseen() == cachedLastSeen);
+				if(executionData.getExpectedLastSeen() == cachedLastSeen) {
+					return true;
+				}
+				LOGGER.warn("evaluating test : {} FAILED >> ExpectedLastSeen : {} && cachedLastSeen : {}", executionData.getTestCaseEnum().getKey(), executionData.getExpectedLastSeen(), cachedLastSeen);
+				return (executionData.getExpectedLastSeen() == cachedLastSeen);
 			} catch (NumberFormatException e) {
 				LOGGER.error("NumberFormatException while taking cachedCheckinValue : {} from cache 51", cachedCheckinValue);
 			}
@@ -168,9 +188,21 @@ public class SanityCheckerService {
 		if (null != batteryValue) {
 			proximityPacket.setBattery(batteryValue);
 		}
+		
 		switch(executionData.getTestCaseEnum()) {
 		case PROXIMITY_USER_CHECKIN_SET:
 			executionData.setInitialLastSeen(proximityPacket.getLastseen());
+			executionData.setExpectedLastSeen(proximityPacket.getLastseen());
+			break;
+		case PROXIMITY_USER_CHECKIN_UPDATE:
+			proximityPacket.setLastseen(executionData.getExpectedLastSeen() - UPDATE_LAST_SEEN_DIFF);
+			executionData.setExpectedLastSeen(proximityPacket.getLastseen());
+			break;
+		case PROXIMITY_USER_CHECKIN_NOCHANGE_GREATER:
+			proximityPacket.setLastseen(executionData.getExpectedLastSeen() + ONEDAY_LAST_SEEN_DIFF);
+			break;
+		case PROXIMITY_USER_CHECKIN_NOCHANGE_PREVIOUSDAY:	
+			proximityPacket.setLastseen(executionData.getExpectedLastSeen() - ONEDAY_LAST_SEEN_DIFF);
 			break;
 		default :
 			break;

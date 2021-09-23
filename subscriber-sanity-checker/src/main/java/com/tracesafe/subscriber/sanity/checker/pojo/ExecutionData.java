@@ -16,4 +16,6 @@ public class ExecutionData extends SanityInput 	{
 	private long executionTime;
 	
 	private long initialLastSeen;
+	
+	private long expectedLastSeen;
 }
