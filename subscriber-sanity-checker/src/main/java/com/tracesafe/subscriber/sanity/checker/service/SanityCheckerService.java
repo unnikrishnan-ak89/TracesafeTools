@@ -1,6 +1,8 @@
 package com.tracesafe.subscriber.sanity.checker.service;
 
 import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.List;
 
 import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -33,6 +35,8 @@ public class SanityCheckerService {
 	
 	private static long ONEDAY_LAST_SEEN_DIFF = 86400; // 60 x 60 x 24 = 86,400 
 	
+	private List<TestCaseEnum> retriedTests = new ArrayList<>();
+	
 	@Autowired
 	private ConfigurationService configurationService;
 
@@ -43,6 +47,14 @@ public class SanityCheckerService {
 	@Autowired
 	@Qualifier("subOrgTimezoneTemplate")
 	private StringRedisTemplate subOrgTimezoneTemplate;  // 52
+	
+	@Autowired
+	@Qualifier("taginfotemplate")
+	StringRedisTemplate tagKeepaliveTemplate; // 513 - updating last_seen/ last sync / battery value
+	
+	@Autowired
+	@Qualifier("bridgeinfotemplate")
+	StringRedisTemplate bridgeKeepaliveTemplate;
 
 	private ExecutionData executionData;
 	
@@ -51,11 +63,12 @@ public class SanityCheckerService {
 	private MqttAsyncClient mqttClientBridge1;
 
 	private boolean evaluateTestcaseStatus; 
-
+	
 	public void initiateTest(String subscribebrSanityJsonPath) {
+		LOGGER.info("Initiating tests using subscribebrSanityJsonPath : {}", subscribebrSanityJsonPath);
 		executionData = (ExecutionData) JsonUtil.getObjectFromFile(subscribebrSanityJsonPath, ExecutionData.class);
 		executionData.setRootOrgId(configurationService.getRootOrgId());
-		
+		retriedTests.clear();
 		for (TestCaseEnum testCaseEnum : TestCaseEnum.values()) {
 			executionData.setTestCaseEnum(testCaseEnum);
 			executeTest();
@@ -64,25 +77,60 @@ public class SanityCheckerService {
 	}
 	
 	private void executeTest() {
+
+		executionData.setExecutionTime(System.currentTimeMillis()/1000);
+		
 		switch(executionData.getTestCaseEnum()) {
 		case PROXIMITY_USER_CHECKIN_SET:
 			String proximityUserCheckinKey = getProximityUserCheckinKey();
 			tagCheckinTimeTemplate.delete(proximityUserCheckinKey);
-			executionData.setExecutionTime(System.currentTimeMillis()/1000);
 			publichProximityPacket();
 			break;
 		case PROXIMITY_USER_CHECKIN_UPDATE:
 		case PROXIMITY_USER_CHECKIN_NOCHANGE_GREATER:
 		case PROXIMITY_USER_CHECKIN_NOCHANGE_PREVIOUSDAY:	
-			executionData.setExecutionTime(System.currentTimeMillis()/1000);
+			publichProximityPacket();
+			break;
+		case PROXIMITY_UPDATE_TAG_KEEPALIVE:
+			String tagKeepAliveKey = getTagKeepAliveKey();
+			tagKeepaliveTemplate.delete(tagKeepAliveKey);
+			publichProximityPacket();
+			waitForSec(3);
+			break;
+		case PROXIMITY_BATTERY_SET_100:
+		case PROXIMITY_BATTERY_UPDATE_100_TO_85:
+		case PROXIMITY_BATTERY_UPDATE_85_TO_71:
+		case PROXIMITY_BATTERY_UPDATE_71_TO_57:
+		case PROXIMITY_BATTERY_UPDATE_57_TO_42:
+		case PROXIMITY_BATTERY_UPDATE_42_TO_28:
+		case PROXIMITY_BATTERY_UPDATE_28_TO_14:
+		case PROXIMITY_BATTERY_UPDATE_14_TO_6:
+		case PROXIMITY_BATTERY_NOCHANGE_6:
+		case PROXIMITY_BATTERY_UPDATE_6_TO_14:
+		case PROXIMITY_BATTERY_UPDATE_14_TO_28:
+		case PROXIMITY_BATTERY_UPDATE_28_TO_42:
+		case PROXIMITY_BATTERY_UPDATE_42_TO_57:
+		case PROXIMITY_BATTERY_UPDATE_57_TO_71:
+		case PROXIMITY_BATTERY_UPDATE_71_TO_85:
+		case PROXIMITY_BATTERY_UPDATE_85_TO_100:
+			publichProximityPacket();
+			waitForSec(3);
+			break;
+		case PROXIMITY_UPDATE_BRIDGE_KEEPALIVE:
+			String bridgeKeepAliveKey = getBridgeKeepAliveKey();
+			bridgeKeepaliveTemplate.delete(bridgeKeepAliveKey);
 			publichProximityPacket();
 			break;
 		default :
 			break;
 		}
 		
+		waitForSec(5);
+	}
+	
+	private void waitForSec(int sec) {
 		try {
-			Thread.sleep(5000);
+			Thread.sleep(sec * 1000);
 		} catch (InterruptedException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
@@ -109,20 +157,63 @@ public class SanityCheckerService {
         }
 	}
 	
-	private void evaluateTest() {
+	private boolean evaluateTest() {
 		switch(executionData.getTestCaseEnum()) {
 		case PROXIMITY_USER_CHECKIN_SET:
 		case PROXIMITY_USER_CHECKIN_UPDATE:
 		case PROXIMITY_USER_CHECKIN_NOCHANGE_GREATER:
 		case PROXIMITY_USER_CHECKIN_NOCHANGE_PREVIOUSDAY:	
-			evaluateTestcaseStatus = checkProximityPacketCachedLastSeen();
+			evaluateTestcaseStatus = checkProximityPacketCachedUserCheckinTime();
 			break;
-		default :
+		case PROXIMITY_UPDATE_TAG_KEEPALIVE:
+		case PROXIMITY_BATTERY_SET_100:
+		case PROXIMITY_BATTERY_UPDATE_100_TO_85:
+		case PROXIMITY_BATTERY_UPDATE_85_TO_71:
+		case PROXIMITY_BATTERY_UPDATE_71_TO_57:
+		case PROXIMITY_BATTERY_UPDATE_57_TO_42:
+		case PROXIMITY_BATTERY_UPDATE_42_TO_28:
+		case PROXIMITY_BATTERY_UPDATE_28_TO_14:
+		case PROXIMITY_BATTERY_UPDATE_14_TO_6:
+		case PROXIMITY_BATTERY_NOCHANGE_6:
+		case PROXIMITY_BATTERY_UPDATE_6_TO_14:
+		case PROXIMITY_BATTERY_UPDATE_14_TO_28:
+		case PROXIMITY_BATTERY_UPDATE_28_TO_42:
+		case PROXIMITY_BATTERY_UPDATE_42_TO_57:
+		case PROXIMITY_BATTERY_UPDATE_57_TO_71:
+		case PROXIMITY_BATTERY_UPDATE_71_TO_85:
+		case PROXIMITY_BATTERY_UPDATE_85_TO_100:
+			evaluateTestcaseStatus = checkTagKeepAliveUpdate();
+			if(!evaluateTestcaseStatus) {
+				evaluateTestcaseStatus = reEvaluateTagKeepAliveUpdate();
+			}
+			break;
+		case PROXIMITY_UPDATE_BRIDGE_KEEPALIVE:
+			evaluateTestcaseStatus = checkBridgeKeepAliveUpdate();
+			if(!evaluateTestcaseStatus) {
+				evaluateTestcaseStatus = reEvaluateBridgeKeepAliveUpdate();
+			}
 			break;
 		}
-		if (evaluateTestcaseStatus) {
-			LOGGER.debug("evaluating test : {} >> {}", executionData.getTestCaseEnum().getKey(), evaluateTestcaseStatus ? "SUCCESS" : "FAILED");
+		LOGGER.info("evaluating test : {} >> {}", executionData.getTestCaseEnum().getKey(), evaluateTestcaseStatus ? "SUCCESS" : "FAILED");
+		return evaluateTestcaseStatus;
+	}
+	
+	private boolean reEvaluateTagKeepAliveUpdate() {
+		if(!retriedTests.contains(executionData.getTestCaseEnum())) {
+			retriedTests.add(executionData.getTestCaseEnum());
+			waitForSec(3);
+			return checkTagKeepAliveUpdate();
 		}
+		return false;
+	}
+	
+	private boolean reEvaluateBridgeKeepAliveUpdate() {
+		if(!retriedTests.contains(executionData.getTestCaseEnum())) {
+			retriedTests.add(executionData.getTestCaseEnum());
+			waitForSec(3);
+			return checkBridgeKeepAliveUpdate();
+		}
+		return false;
 	}
 	
 	private String getProximityUserCheckinKey() {
@@ -131,7 +222,67 @@ public class SanityCheckerService {
 		return String.format(RedisUtils.TAG_CHECKIN_TIME_KEY_FORMAT, executionData.getRootOrgId(), executionData.getTagUser1(), currentDate);
 	}
 	
-	private boolean checkProximityPacketCachedLastSeen() {
+	private String getTagKeepAliveKey() {
+		return RedisUtils.getTagKeepAliveKey(executionData.getRootOrgId(), executionData.getBridgeSiteId1(), executionData.getTagId1());
+	}
+	
+	private String getBridgeKeepAliveKey() {
+		return RedisUtils.getBridgeInfoKey(executionData.getRootOrgId(), executionData.getBridgeSiteId1(), executionData.getBridgeSerialNo1());
+	}
+	
+	private boolean checkTagKeepAliveUpdate() {
+		try {
+			String key = getTagKeepAliveKey();
+			String value = tagKeepaliveTemplate.opsForValue().get(key);
+			if (StringUtils.isBlank(value)) {
+				LOGGER.info("**************************** checkTagKeepAliveUpdate failed, value found null against key : {}", key);
+				return false;
+			}
+			
+			int expectedBatteryValue = null != executionData.getTestCaseEnum().getBatteryValue() ? executionData.getTestCaseEnum().getBatteryValue().intValue() : proximityPacket.getBattery();
+			if(TestCaseEnum.PROXIMITY_BATTERY_UPDATE_14_TO_6.equals(executionData.getTestCaseEnum()) || TestCaseEnum.PROXIMITY_BATTERY_NOCHANGE_6.equals(executionData.getTestCaseEnum())) {
+				expectedBatteryValue = 6;			
+			}
+			String[] tagInfo = value.split(":");
+			long cachedLastSeen = Long.parseLong(tagInfo[5]);
+			int cachedBatteryValue = Integer.parseInt(tagInfo[6]);
+			boolean lastSeenCacheUpdated = cachedLastSeen >= executionData.getExecutionTime();
+			boolean batteryCacheUpdated =  expectedBatteryValue == cachedBatteryValue;
+			if (lastSeenCacheUpdated && batteryCacheUpdated) {
+				return true;
+			}
+//			LOGGER.info("**************************** lastSeenCacheUpdated : {} && batteryCacheUpdated : {}", lastSeenCacheUpdated, batteryCacheUpdated);
+		} catch (Exception e) {
+			LOGGER.error("Exception while processing checkTagKeepAliveUpdate() ", e);
+		}
+		return false;
+	}
+	
+	private boolean checkBridgeKeepAliveUpdate() {
+		try {
+			String bridgeKeepAliveKey = getBridgeKeepAliveKey();
+			String bridgeInfoValue = bridgeKeepaliveTemplate.opsForValue().get(bridgeKeepAliveKey);
+			if(StringUtils.isBlank(bridgeInfoValue)) {
+				LOGGER.info("**************************** checkBridgeKeepAliveUpdate failed, value found null against key : {}", bridgeKeepAliveKey);
+				return false;
+			}
+			String[] str = bridgeInfoValue.split(":");		// <gwUploadTime:gwHeartBeatTime:gwLoginTime>
+			long gwUploadTime = Long.parseLong(str[0]);
+			long gwHeartBeatTime = Long.parseLong(str[1]);
+			boolean gwUploadTimeUpdated = gwUploadTime >= executionData.getExecutionTime();
+			boolean gwHeartBeatTimeUpdated = gwHeartBeatTime >= executionData.getExecutionTime();
+			if (gwUploadTimeUpdated && gwHeartBeatTimeUpdated) {
+				return true;
+			}
+//			LOGGER.info("**************************** gwUploadTimeUpdated : {} && gwHeartBeatTimeUpdated : {}", gwUploadTimeUpdated, gwHeartBeatTimeUpdated);
+			return false;
+		} catch (Exception e) {
+			LOGGER.error("Exception while processing checkBridgeKeepAliveUpdate() ", e);
+			return false;
+		}
+	}
+	
+	private boolean checkProximityPacketCachedUserCheckinTime() {
 		String key = getProximityUserCheckinKey();
 		String cacheValue = tagCheckinTimeTemplate.opsForValue().get(key);
 		if(StringUtils.isBlank(cacheValue)) {
@@ -142,14 +293,14 @@ public class SanityCheckerService {
 		String cachedCheckinValue = split.length != 9 ? null : split[6];
 		
 		if (null != cachedCheckinValue) {
-			long cachedLastSeen = 0;
+			long cachedCheckinTime = 0;
 			try {
-				cachedLastSeen = Long.parseLong(cachedCheckinValue);
-				if(executionData.getExpectedLastSeen() == cachedLastSeen) {
+				cachedCheckinTime = Long.parseLong(cachedCheckinValue);
+				if(executionData.getExpectedLastSeen() == cachedCheckinTime) {
 					return true;
 				}
-				LOGGER.warn("evaluating test : {} FAILED >> ExpectedLastSeen : {} && cachedLastSeen : {}", executionData.getTestCaseEnum().getKey(), executionData.getExpectedLastSeen(), cachedLastSeen);
-				return (executionData.getExpectedLastSeen() == cachedLastSeen);
+//				LOGGER.warn("evaluating test : {} FAILED >> ExpectedCheckin : {} && cachedCheckinTime : {}", executionData.getTestCaseEnum().getKey(), executionData.getExpectedLastSeen(), cachedCheckinTime);
+				return (executionData.getExpectedLastSeen() == cachedCheckinTime);
 			} catch (NumberFormatException e) {
 				LOGGER.error("NumberFormatException while taking cachedCheckinValue : {} from cache 51", cachedCheckinValue);
 			}
@@ -205,6 +356,7 @@ public class SanityCheckerService {
 			proximityPacket.setLastseen(executionData.getExpectedLastSeen() - ONEDAY_LAST_SEEN_DIFF);
 			break;
 		default :
+			proximityPacket.setLastseen(System.currentTimeMillis()/1000);
 			break;
 		}
 	}
