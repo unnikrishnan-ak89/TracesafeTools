@@ -10,15 +10,19 @@ import org.eclipse.paho.client.mqttv3.MqttAsyncClient;
 import org.eclipse.paho.client.mqttv3.MqttMessage;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import com.tracesafe.subscriber.sanity.checker.config.MqttConnect;
+import com.tracesafe.subscriber.sanity.checker.model.EvaluateData;
+import com.tracesafe.subscriber.sanity.checker.model.ReportData;
 import com.tracesafe.subscriber.sanity.checker.pojo.ExecutionData;
 import com.tracesafe.subscriber.sanity.checker.pojo.TagProximityPacket;
 import com.tracesafe.subscriber.sanity.checker.type.ConfigEnum;
 import com.tracesafe.subscriber.sanity.checker.type.TestCaseEnum;
 import com.tracesafe.subscriber.sanity.checker.utils.CommonUtils;
+import com.tracesafe.subscriber.sanity.checker.utils.CsvUtil;
 import com.tracesafe.subscriber.sanity.checker.utils.DateUtil;
 import com.tracesafe.subscriber.sanity.checker.utils.FileUtils;
 import com.tracesafe.subscriber.sanity.checker.utils.JsonUtil;
@@ -36,6 +40,9 @@ public class SanityCheckerService {
 	private static long ONEDAY_LAST_SEEN_DIFF = 86400; // 60 x 60 x 24 = 86,400 
 	
 	private List<TestCaseEnum> retriedTests = new ArrayList<>();
+
+	@Value("${subscriber.sanity.checker.test.report.path}")
+	private String reportDirectoryPath;
 	
 	@Autowired
 	private ConfigurationService configurationService;
@@ -54,7 +61,7 @@ public class SanityCheckerService {
 	
 	@Autowired
 	@Qualifier("bridgeinfotemplate")
-	StringRedisTemplate bridgeKeepaliveTemplate;
+	StringRedisTemplate bridgeKeepaliveTemplate; // 509
 
 	private ExecutionData executionData;
 	
@@ -62,7 +69,9 @@ public class SanityCheckerService {
 
 	private MqttAsyncClient mqttClientBridge1;
 
-	private boolean evaluateTestcaseStatus; 
+	private boolean evaluateTestcaseStatus;
+
+	private EvaluateData evaluateData = new EvaluateData(); 
 	
 	public void initiateTest(String subscribebrSanityJsonPath) {
 		LOGGER.info("Initiating tests using subscribebrSanityJsonPath : {}", subscribebrSanityJsonPath);
@@ -74,6 +83,9 @@ public class SanityCheckerService {
 			executeTest();
 			evaluateTest();
 		}
+		
+		LOGGER.info("All tests completed...");
+		CsvUtil.writeReport(reportDirectoryPath);
 	}
 	
 	private void executeTest() {
@@ -195,7 +207,18 @@ public class SanityCheckerService {
 			break;
 		}
 		LOGGER.info("evaluating test : {} >> {}", executionData.getTestCaseEnum().getKey(), evaluateTestcaseStatus ? "SUCCESS" : "FAILED");
+		addToReport();
 		return evaluateTestcaseStatus;
+	}
+	
+	private void addToReport() {
+		ReportData data = new ReportData();
+		data.setTestCase(executionData.getTestCaseEnum().getDescription());
+		data.setStatus(evaluateData.isSuccess() ? "SUCCESS" : "FAILED");
+		data.setCache(String.valueOf(executionData.getTestCaseEnum().getCache()));
+		data.setKeyValue(String.format("Key : %s -> Value : %s", evaluateData.getKey(), evaluateData.getValue()));
+		data.setExtraInfo(evaluateData.getExtraInfo());
+		CsvUtil.saveReportData(data);
 	}
 	
 	private boolean reEvaluateTagKeepAliveUpdate() {
@@ -231,11 +254,13 @@ public class SanityCheckerService {
 	}
 	
 	private boolean checkTagKeepAliveUpdate() {
+		String key = null, value = null;
 		try {
-			String key = getTagKeepAliveKey();
-			String value = tagKeepaliveTemplate.opsForValue().get(key);
+			key = getTagKeepAliveKey();
+			value = tagKeepaliveTemplate.opsForValue().get(key);
 			if (StringUtils.isBlank(value)) {
 				LOGGER.info("**************************** checkTagKeepAliveUpdate failed, value found null against key : {}", key);
+				setEvaluateData(false, key, "NULL", null);
 				return false;
 			}
 			
@@ -249,21 +274,34 @@ public class SanityCheckerService {
 			boolean lastSeenCacheUpdated = cachedLastSeen >= executionData.getExecutionTime();
 			boolean batteryCacheUpdated =  expectedBatteryValue == cachedBatteryValue;
 			if (lastSeenCacheUpdated && batteryCacheUpdated) {
+				setEvaluateData(true, key, value, null);
 				return true;
 			}
 //			LOGGER.info("**************************** lastSeenCacheUpdated : {} && batteryCacheUpdated : {}", lastSeenCacheUpdated, batteryCacheUpdated);
+			setEvaluateData(false, key, value, null);
 		} catch (Exception e) {
 			LOGGER.error("Exception while processing checkTagKeepAliveUpdate() ", e);
+			setEvaluateData(false, key, value, "Exception while processing checkTagKeepAliveUpdate");
 		}
+		
 		return false;
 	}
 	
+	private void setEvaluateData(boolean success, String key, String value, String extraInfo) {
+		evaluateData.setSuccess(success);
+		evaluateData.setKey(key);
+		evaluateData.setValue(value);
+		evaluateData.setExtraInfo(extraInfo);
+	}
+	
 	private boolean checkBridgeKeepAliveUpdate() {
+		String bridgeKeepAliveKey = null, bridgeInfoValue = null;
 		try {
-			String bridgeKeepAliveKey = getBridgeKeepAliveKey();
-			String bridgeInfoValue = bridgeKeepaliveTemplate.opsForValue().get(bridgeKeepAliveKey);
+			bridgeKeepAliveKey = getBridgeKeepAliveKey();
+			bridgeInfoValue = bridgeKeepaliveTemplate.opsForValue().get(bridgeKeepAliveKey);
 			if(StringUtils.isBlank(bridgeInfoValue)) {
 				LOGGER.info("**************************** checkBridgeKeepAliveUpdate failed, value found null against key : {}", bridgeKeepAliveKey);
+				setEvaluateData(false, bridgeKeepAliveKey, "NULL", null);
 				return false;
 			}
 			String[] str = bridgeInfoValue.split(":");		// <gwUploadTime:gwHeartBeatTime:gwLoginTime>
@@ -272,38 +310,44 @@ public class SanityCheckerService {
 			boolean gwUploadTimeUpdated = gwUploadTime >= executionData.getExecutionTime();
 			boolean gwHeartBeatTimeUpdated = gwHeartBeatTime >= executionData.getExecutionTime();
 			if (gwUploadTimeUpdated && gwHeartBeatTimeUpdated) {
+				setEvaluateData(true, bridgeKeepAliveKey, bridgeInfoValue, null);
 				return true;
 			}
 //			LOGGER.info("**************************** gwUploadTimeUpdated : {} && gwHeartBeatTimeUpdated : {}", gwUploadTimeUpdated, gwHeartBeatTimeUpdated);
-			return false;
+			setEvaluateData(false, bridgeKeepAliveKey, bridgeInfoValue, null);
 		} catch (Exception e) {
 			LOGGER.error("Exception while processing checkBridgeKeepAliveUpdate() ", e);
-			return false;
+			setEvaluateData(false, bridgeKeepAliveKey, bridgeInfoValue, "Exception while processing checkBridgeKeepAliveUpdate");
 		}
+		return false;
 	}
 	
 	private boolean checkProximityPacketCachedUserCheckinTime() {
-		String key = getProximityUserCheckinKey();
-		String cacheValue = tagCheckinTimeTemplate.opsForValue().get(key);
-		if(StringUtils.isBlank(cacheValue)) {
-			return false;
-		}
-		
-		String[] split = cacheValue.split(":");
-		String cachedCheckinValue = split.length != 9 ? null : split[6];
-		
-		if (null != cachedCheckinValue) {
-			long cachedCheckinTime = 0;
-			try {
+		String key = null, cacheValue = null;
+		try {
+			key = getProximityUserCheckinKey();
+			cacheValue = tagCheckinTimeTemplate.opsForValue().get(key);
+			if(StringUtils.isBlank(cacheValue)) {
+				setEvaluateData(false, key, "NULL", null);
+				return false;
+			}
+			
+			String[] split = cacheValue.split(":");
+			String cachedCheckinValue = split.length != 9 ? null : split[6];
+			
+			if (null != cachedCheckinValue) {
+				long cachedCheckinTime = 0;
 				cachedCheckinTime = Long.parseLong(cachedCheckinValue);
 				if(executionData.getExpectedLastSeen() == cachedCheckinTime) {
+					setEvaluateData(true, key, cacheValue, null);
 					return true;
 				}
 //				LOGGER.warn("evaluating test : {} FAILED >> ExpectedCheckin : {} && cachedCheckinTime : {}", executionData.getTestCaseEnum().getKey(), executionData.getExpectedLastSeen(), cachedCheckinTime);
-				return (executionData.getExpectedLastSeen() == cachedCheckinTime);
-			} catch (NumberFormatException e) {
-				LOGGER.error("NumberFormatException while taking cachedCheckinValue : {} from cache 51", cachedCheckinValue);
+				setEvaluateData(false, key, cacheValue, null);
 			}
+		} catch (Exception e) {
+			LOGGER.error("Exception while processing checkProximityPacketCachedUserCheckinTime()");
+			setEvaluateData(false, key, cacheValue, "Exception while processing checkProximityPacketCachedUserCheckinTime");
 		}
 		return false;
 	}
