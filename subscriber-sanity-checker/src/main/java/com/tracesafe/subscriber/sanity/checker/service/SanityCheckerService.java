@@ -18,10 +18,12 @@ import com.tracesafe.subscriber.sanity.checker.config.MqttConnect;
 import com.tracesafe.subscriber.sanity.checker.model.EvaluateData;
 import com.tracesafe.subscriber.sanity.checker.model.ReportData;
 import com.tracesafe.subscriber.sanity.checker.pojo.ExecutionData;
+import com.tracesafe.subscriber.sanity.checker.pojo.TagContactPacket;
 import com.tracesafe.subscriber.sanity.checker.pojo.TagProximityPacket;
 import com.tracesafe.subscriber.sanity.checker.type.ConfigEnum;
 import com.tracesafe.subscriber.sanity.checker.type.TestCaseEnum;
 import com.tracesafe.subscriber.sanity.checker.utils.CommonUtils;
+import com.tracesafe.subscriber.sanity.checker.utils.ContactDataPacketUtil;
 import com.tracesafe.subscriber.sanity.checker.utils.CsvUtil;
 import com.tracesafe.subscriber.sanity.checker.utils.DateUtil;
 import com.tracesafe.subscriber.sanity.checker.utils.FileUtils;
@@ -66,6 +68,8 @@ public class SanityCheckerService {
 	private ExecutionData executionData;
 	
 	private TagProximityPacket proximityPacket = null;
+	
+	private TagContactPacket tagContactPacket = null;
 
 	private MqttAsyncClient mqttClientBridge1;
 
@@ -78,7 +82,10 @@ public class SanityCheckerService {
 		executionData = (ExecutionData) JsonUtil.getObjectFromFile(subscribebrSanityJsonPath, ExecutionData.class);
 		executionData.setRootOrgId(configurationService.getRootOrgId());
 		retriedTests.clear();
-		for (TestCaseEnum testCaseEnum : TestCaseEnum.values()) {
+		
+		TestCaseEnum[] testCases = TestCaseEnum.values();
+		testCases = new TestCaseEnum[]{TestCaseEnum.CT_UPDATE_BRIDGEKEEP_ALIVE_ON_INVALID_TAG_PACKET};
+		for (TestCaseEnum testCaseEnum : testCases) {
 			executionData.setTestCaseEnum(testCaseEnum);
 			executeTest();
 			evaluateTest();
@@ -133,6 +140,9 @@ public class SanityCheckerService {
 			bridgeKeepaliveTemplate.delete(bridgeKeepAliveKey);
 			publichProximityPacket();
 			break;
+		case CT_UPDATE_BRIDGEKEEP_ALIVE_ON_INVALID_TAG_PACKET:
+			publichContactPacket();
+			break;
 		default :
 			break;
 		}
@@ -147,6 +157,26 @@ public class SanityCheckerService {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
+	}
+	
+	private void publichContactPacket() {
+		loadTagContactPacket();
+		if (null == mqttClientBridge1) {
+			mqttClientBridge1 = getMqttClient(executionData.getBridgeSerialNo1(), executionData.getBridgeId1());
+		}
+		
+		Byte[] arr = ContactDataPacketUtil.createPacket(executionData, tagContactPacket);
+		MqttMessage sendMessage = new MqttMessage(ArrayUtils.toPrimitive(arr));
+//		sendMessage.setQos(1); // will wait for acknowledgement
+		sendMessage.setQos(0); // will not wait for acknowledgement
+        if (mqttClientBridge1 != null && mqttClientBridge1.isConnected()) {
+        	String topic = String.format("1/cmd/%d/%d", executionData.getRootOrgId(), executionData.getBridgeSiteId1());
+            try {
+            	mqttClientBridge1.publish(topic, sendMessage);
+            } catch (Exception e) {
+            	LOGGER.error("Exception while publishing proximityPackey to topic : {}", topic, e);
+            }
+        }
 	}
 	
 	private void publichProximityPacket() {
@@ -204,6 +234,15 @@ public class SanityCheckerService {
 			if(!evaluateTestcaseStatus) {
 				evaluateTestcaseStatus = reEvaluateBridgeKeepAliveUpdate();
 			}
+			break;
+		case CT_UPDATE_BRIDGEKEEP_ALIVE_ON_INVALID_TAG_PACKET:
+			evaluateTestcaseStatus = checkBridgeKeepAliveUpdate();
+			if(!evaluateTestcaseStatus) {
+				evaluateTestcaseStatus = reEvaluateBridgeKeepAliveUpdate();
+			}
+			executionData.setBeaconLoggerId1(executionData.getInitialBeaconLoggerId1());
+			break;
+		default:
 			break;
 		}
 		LOGGER.info("evaluating test : {} >> {}", executionData.getTestCaseEnum().getKey(), evaluateTestcaseStatus ? "SUCCESS" : "FAILED");
@@ -401,6 +440,33 @@ public class SanityCheckerService {
 			break;
 		default :
 			proximityPacket.setLastseen(System.currentTimeMillis()/1000);
+			break;
+		}
+	}
+	
+	private void loadTagContactPacket() {
+		if (null == tagContactPacket) {
+			String csvFilePath = configurationService.getConfigValue(ConfigEnum.TAG_CONTACT_PACKET_DATA_FILE);
+			InputStream csvDataStream = FileUtils.loadFileStream(csvFilePath);
+			if (null == csvDataStream) {
+				LOGGER.error("Could not load csvDataStream from configured csvFilePath : {}. Skipping packet simulation", csvFilePath);
+				return;
+			}
+			
+			tagContactPacket = CommonUtils.getTagContactPacketData(csvDataStream);
+		}
+		
+		Integer batteryValue = executionData.getTestCaseEnum().getBatteryValue();
+		if (null != batteryValue) {
+			tagContactPacket.setBattery(batteryValue);
+		}
+		
+		switch(executionData.getTestCaseEnum()) {
+		case CT_UPDATE_BRIDGEKEEP_ALIVE_ON_INVALID_TAG_PACKET:
+			executionData.setInitialBeaconLoggerId1(executionData.getBeaconLoggerId1());
+			executionData.setBeaconLoggerId1(200);
+			break;
+		default :
 			break;
 		}
 	}

@@ -32,8 +32,6 @@ public class TagContactPacket {
 	private int rssi;
 	private int contactInterval; // in SECONDS
 	
-	private boolean randomBatteryEnabled;
-	
 	public TagContactPacket() {}
 	
 	public TagContactPacket(int sequenceNumber, int protocolVersion, long beaconLoggerTick,
@@ -44,20 +42,6 @@ public class TagContactPacket {
 		this.beaconLoggerTick = beaconLoggerTick;
 		this.extractTime = extractTime;
 		this.battery = battery;
-		this.guidIndex = guidIndex;
-		this.count = count;
-		this.rssi = rssi;
-		this.contactInterval = contactInterval;
-	}
-	
-	public TagContactPacket(int sequenceNumber, int protocolVersion, long beaconLoggerTick,
-			long extractTime, boolean randomBatteryEnabled, int guidIndex, int count, int rssi, int contactInterval) {
-		super();
-		this.sequenceNumber = sequenceNumber;
-		this.protocolVersion = protocolVersion;
-		this.beaconLoggerTick = beaconLoggerTick;
-		this.extractTime = extractTime;
-		this.randomBatteryEnabled = randomBatteryEnabled;
 		this.guidIndex = guidIndex;
 		this.count = count;
 		this.rssi = rssi;

@@ -28,6 +28,8 @@ public enum TestCaseEnum {
 	PROXIMITY_BATTERY_UPDATE_57_TO_71("PROXIMITY_BATTERY_UPDATE_57_TO_71", "1.7.14 Proximity Battery value Increase - 57 to 71", 71, 513),
 	PROXIMITY_BATTERY_UPDATE_71_TO_85("PROXIMITY_BATTERY_UPDATE_71_TO_85", "1.7.15 Proximity Battery value Increase - 71 to 85", 85, 513),
 	PROXIMITY_BATTERY_UPDATE_85_TO_100("PROXIMITY_BATTERY_UPDATE_85_TO_100", "1.7.16 Proximity Battery value Increase - 85 to 100", 100, 513),
+
+	CT_UPDATE_BRIDGEKEEP_ALIVE_ON_INVALID_TAG_PACKET("CT_UPDATE_BRIDGEKEEP_ALIVE_ON_INVALID_TAG_PACKET", "1.8 Discard Packet with Invalid tag - Update Bridge Keep-Alive", 100, 509),
 	;
 	
 	private final String key;

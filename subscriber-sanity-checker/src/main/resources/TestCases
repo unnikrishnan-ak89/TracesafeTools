@@ -22,3 +22,4 @@
  	1.7.14 Proximity Battery value Increase - 57 to 71 [Cache 513]
  	1.7.15 Proximity Battery value Increase - 71 to 85 [Cache 513]
  	1.7.16 Proximity Battery value Increase - 85 to 100 [Cache 513]
+1.8 Discard Packet with Invalid tag - Update Bridge Keep-Alive [cache : 509]  

@@ -18,4 +18,6 @@ public class ExecutionData extends SanityInput 	{
 	private long initialLastSeen;
 	
 	private long expectedLastSeen;
+	
+	private long initialBeaconLoggerId1;
 }

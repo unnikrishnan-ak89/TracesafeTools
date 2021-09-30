@@ -3,25 +3,30 @@ package com.tracesafe.subscriber.sanity.checker.utils;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Random;
 
 import org.apache.commons.lang3.ArrayUtils;
 
 import com.tracesafe.subscriber.sanity.checker.Constants;
+import com.tracesafe.subscriber.sanity.checker.pojo.ExecutionData;
 import com.tracesafe.subscriber.sanity.checker.pojo.TagContactPacket;
 
 public class ContactDataPacketUtil {
+	
+	public static Byte[] createPacket(ExecutionData executionData, TagContactPacket packetData) {
+		List<Long> tagArray = Arrays.asList(executionData.getBeaconLoggerId1());
+		int rootOrgId = executionData.getRootOrgId();
+		int subOrgId = executionData.getBridgeSiteId1();
+		int bridgeId = executionData.getBridgeSerialNo1(); 
+		long beaconlogger = executionData.getBeaconLoggerId1();
+		return createPacket(rootOrgId, subOrgId, bridgeId, beaconlogger, tagArray, packetData, 8);
+	}
 
 	public static Byte[] createPacket(int rootOrgId, int subOrgId, int bridgeId, long beaconlogger, List<Long> tagArray, TagContactPacket packetData, int maxNumberOfRecords) {
 
 		int header = Constants.TAG_PACKET_HEADER;
 		int count = tagArray.size();
-		Random rand = new Random();
 		int i = 0;
 		int battery = packetData.getBattery();
-		if (packetData.isRandomBatteryEnabled()) {
-			battery = rand.nextInt(101);
-		}
 		List<Byte> bytearr = new ArrayList<>();
 
 		int contactCount = 0;
