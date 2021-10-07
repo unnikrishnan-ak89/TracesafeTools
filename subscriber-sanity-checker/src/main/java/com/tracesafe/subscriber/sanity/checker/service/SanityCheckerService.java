@@ -41,6 +41,8 @@ public class SanityCheckerService {
 	
 	private static long ONEDAY_LAST_SEEN_DIFF = 86400; // 60 x 60 x 24 = 86,400 
 	
+	private static String PIPE = "|";
+	
 	private List<TestCaseEnum> retriedTests = new ArrayList<>();
 
 	@Value("${subscriber.sanity.checker.test.report.path}")
@@ -84,8 +86,8 @@ public class SanityCheckerService {
 		retriedTests.clear();
 		
 		TestCaseEnum[] testCases = TestCaseEnum.values();
-		testCases = new TestCaseEnum[]{TestCaseEnum.CT_UPDATE_BRIDGEKEEP_ALIVE_ON_INVALID_TAG_PACKET};
-		for (TestCaseEnum testCaseEnum : testCases) {
+		testCases = new TestCaseEnum[]{TestCaseEnum.CT_UPDATE_BRIDGEKEEP_ALIVE_ON_INVALID_TAG_PACKET, TestCaseEnum.CT_UPDATE_KEEP_ALIVE_ON_INVALID_TAG_B_PACKET};
+		for (TestCaseEnum testCaseEnum : TestCaseEnum.values()) {
 			executionData.setTestCaseEnum(testCaseEnum);
 			executeTest();
 			evaluateTest();
@@ -141,6 +143,7 @@ public class SanityCheckerService {
 			publichProximityPacket();
 			break;
 		case CT_UPDATE_BRIDGEKEEP_ALIVE_ON_INVALID_TAG_PACKET:
+		case CT_UPDATE_KEEP_ALIVE_ON_INVALID_TAG_B_PACKET:
 			publichContactPacket();
 			break;
 		default :
@@ -242,6 +245,28 @@ public class SanityCheckerService {
 			}
 			executionData.setBeaconLoggerId1(executionData.getInitialBeaconLoggerId1());
 			break;
+		case CT_UPDATE_KEEP_ALIVE_ON_INVALID_TAG_B_PACKET:
+			evaluateTestcaseStatus = checkBridgeKeepAliveUpdate();
+			if(!evaluateTestcaseStatus) {
+				evaluateTestcaseStatus = reEvaluateBridgeKeepAliveUpdate();
+				if (!evaluateTestcaseStatus) {
+					evaluateData.setExtraInfo("BridgeKeepAliveUpdate Failed");
+				}
+			}
+			
+			evaluateTestcaseStatus = checkTagKeepAliveUpdate();
+			if(!evaluateTestcaseStatus) {
+				evaluateTestcaseStatus = reEvaluateTagKeepAliveUpdate();
+				if (!evaluateTestcaseStatus) {
+					String extraInfo = evaluateData.getExtraInfo();
+					if(StringUtils.isNotBlank(extraInfo)) {
+						extraInfo = String.format("%s%s%s", extraInfo, PIPE, "TagKeepAliveUpdate Failed");
+					}
+					evaluateData.setExtraInfo(extraInfo);
+				}
+			}
+			executionData.setBeaconLoggerId2(executionData.getInitialBeaconLoggerId2());
+			break;
 		default:
 			break;
 		}
@@ -254,16 +279,32 @@ public class SanityCheckerService {
 		ReportData data = new ReportData();
 		data.setTestCase(executionData.getTestCaseEnum().getDescription());
 		data.setStatus(evaluateData.isSuccess() ? "SUCCESS" : "FAILED");
-		data.setCache(String.valueOf(executionData.getTestCaseEnum().getCache()));
-		data.setKeyValue(String.format("Key : %s -> Value : %s", evaluateData.getKey(), evaluateData.getValue()));
+		data.setCache(executionData.getTestCaseEnum().getCache());
+		
+		String[] keys = evaluateData.getKey().split("\\|");
+		String[] values = evaluateData.getValue().split("\\|");
+		int i = 0;
+		StringBuilder keyValues = new StringBuilder();
+		for (String key : keys) {
+			if(!keyValues.toString().isBlank()) {
+				keyValues.append("\n");
+			}
+			keyValues.append(String.format("Key : %s -> Value : %s", key, values[i]));
+			i++;
+		}
+		data.setKeyValue(keyValues.toString());
 		data.setExtraInfo(evaluateData.getExtraInfo());
 		CsvUtil.saveReportData(data);
+		evaluateData.setExtraInfo("");
+		evaluateData.setKey("");
+		evaluateData.setValue("");
 	}
 	
 	private boolean reEvaluateTagKeepAliveUpdate() {
 		if(!retriedTests.contains(executionData.getTestCaseEnum())) {
 			retriedTests.add(executionData.getTestCaseEnum());
 			waitForSec(3);
+			clearDataOnRetry();
 			return checkTagKeepAliveUpdate();
 		}
 		return false;
@@ -273,9 +314,15 @@ public class SanityCheckerService {
 		if(!retriedTests.contains(executionData.getTestCaseEnum())) {
 			retriedTests.add(executionData.getTestCaseEnum());
 			waitForSec(3);
+			clearDataOnRetry();
 			return checkBridgeKeepAliveUpdate();
 		}
 		return false;
+	}
+	
+	private void clearDataOnRetry() {
+		evaluateData.setKey("");
+		evaluateData.setValue("");
 	}
 	
 	private String getProximityUserCheckinKey() {
@@ -328,6 +375,15 @@ public class SanityCheckerService {
 	
 	private void setEvaluateData(boolean success, String key, String value, String extraInfo) {
 		evaluateData.setSuccess(success);
+		if(StringUtils.isNotBlank(evaluateData.getKey())) {
+			key = String.format("%s%s%s", evaluateData.getKey(), PIPE, key);
+		}
+		if(StringUtils.isNotBlank(evaluateData.getValue())) {
+			value = String.format("%s%s%s", evaluateData.getValue(), PIPE, value);
+		}
+		if(StringUtils.isNotBlank(evaluateData.getExtraInfo()) && StringUtils.isNotBlank(extraInfo)) {
+			extraInfo = String.format("%s%s%s", evaluateData.getExtraInfo(), PIPE, extraInfo);
+		}
 		evaluateData.setKey(key);
 		evaluateData.setValue(value);
 		evaluateData.setExtraInfo(extraInfo);
@@ -465,6 +521,10 @@ public class SanityCheckerService {
 		case CT_UPDATE_BRIDGEKEEP_ALIVE_ON_INVALID_TAG_PACKET:
 			executionData.setInitialBeaconLoggerId1(executionData.getBeaconLoggerId1());
 			executionData.setBeaconLoggerId1(200);
+			break;
+		case CT_UPDATE_KEEP_ALIVE_ON_INVALID_TAG_B_PACKET:
+			executionData.setInitialBeaconLoggerId2(executionData.getBeaconLoggerId2());
+			executionData.setBeaconLoggerId2(200);
 			break;
 		default :
 			break;

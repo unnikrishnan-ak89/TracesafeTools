@@ -10,8 +10,8 @@ import lombok.Setter;
 public class EvaluateData {
 
 	private boolean success;
-	private String key;
-	private String value;
-	private String extraInfo;
+	private String key = "";
+	private String value = "";
+	private String extraInfo = "";
 	
 }
