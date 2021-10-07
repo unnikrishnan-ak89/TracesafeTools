@@ -31,6 +31,7 @@ public enum TestCaseEnum {
 
 	CT_UPDATE_BRIDGEKEEP_ALIVE_ON_INVALID_TAG_PACKET("CT_UPDATE_BRIDGEKEEP_ALIVE_ON_INVALID_TAG_PACKET", "1.8 Discard Contact Packet with Invalid tag(A) - Update Bridge Keep-Alive", 100, "509"),
 	CT_UPDATE_KEEP_ALIVE_ON_INVALID_TAG_B_PACKET("CT_UPDATE_KEEP_ALIVE_ON_INVALID_TAG_B_PACKET", "1.9 Discard Contact Packet with Invalid tagB - Update Bridge & Tag(A) Keep-Alive", 100, "509 & 513"),
+	CT_UPDATE_TAG_BATTERY_VALUE("CT_UPDATE_TAG_BATTERY_VALUE", "1.10 Contact Packet - Update Tag battery value", 90, "513"),
 	;
 	
 	private final String key;

@@ -86,7 +86,7 @@ public class SanityCheckerService {
 		retriedTests.clear();
 		
 		TestCaseEnum[] testCases = TestCaseEnum.values();
-		testCases = new TestCaseEnum[]{TestCaseEnum.CT_UPDATE_BRIDGEKEEP_ALIVE_ON_INVALID_TAG_PACKET, TestCaseEnum.CT_UPDATE_KEEP_ALIVE_ON_INVALID_TAG_B_PACKET};
+		testCases = new TestCaseEnum[]{TestCaseEnum.CT_UPDATE_KEEP_ALIVE_ON_INVALID_TAG_B_PACKET, TestCaseEnum.CT_UPDATE_TAG_BATTERY_VALUE};
 		for (TestCaseEnum testCaseEnum : TestCaseEnum.values()) {
 			executionData.setTestCaseEnum(testCaseEnum);
 			executeTest();
@@ -144,6 +144,7 @@ public class SanityCheckerService {
 			break;
 		case CT_UPDATE_BRIDGEKEEP_ALIVE_ON_INVALID_TAG_PACKET:
 		case CT_UPDATE_KEEP_ALIVE_ON_INVALID_TAG_B_PACKET:
+		case CT_UPDATE_TAG_BATTERY_VALUE:
 			publichContactPacket();
 			break;
 		default :
@@ -227,6 +228,7 @@ public class SanityCheckerService {
 		case PROXIMITY_BATTERY_UPDATE_57_TO_71:
 		case PROXIMITY_BATTERY_UPDATE_71_TO_85:
 		case PROXIMITY_BATTERY_UPDATE_85_TO_100:
+		case CT_UPDATE_TAG_BATTERY_VALUE:
 			evaluateTestcaseStatus = checkTagKeepAliveUpdate();
 			if(!evaluateTestcaseStatus) {
 				evaluateTestcaseStatus = reEvaluateTagKeepAliveUpdate();
@@ -303,7 +305,7 @@ public class SanityCheckerService {
 	private boolean reEvaluateTagKeepAliveUpdate() {
 		if(!retriedTests.contains(executionData.getTestCaseEnum())) {
 			retriedTests.add(executionData.getTestCaseEnum());
-			waitForSec(3);
+			waitForSec(5);
 			clearDataOnRetry();
 			return checkTagKeepAliveUpdate();
 		}
